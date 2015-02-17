@@ -1,0 +1,172 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Parameters": {
+    "InitialCapacity": {
+      "Type": "Number",
+      "Default": 3,
+      "MinValue": 1,
+      "Description": "Number of instances to start with."
+    },
+    "MaximumCapacity": {
+      "Type": "Number",
+      "Default": 3,
+      "MinValue": 1,
+      "Description": "Maximum number of instances to scale to."
+    },
+    "ImageId": {
+      "Type": "String",
+      "Description": "AMI to launch instance with"
+    },
+    "InstanceType": {
+      "Type": "String",
+      "AllowedValues": [ "i2.2xlarge", "m3.xlarge", "m3.2xlarge", "m3.medium" ],
+      "ConstraintDescription": "Must be a valid EC2 instance type.",
+      "Default": "m3.medium",
+      "Description": "EC2 instance type"
+    }
+  },
+
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16"
+      }
+    },
+
+    "Gateway": {
+      "Type": "AWS::EC2::InternetGateway"
+    },
+
+    "GatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "InternetGatewayId": { "Ref": "Gateway" },
+        "VpcId": { "Ref": "VPC" }
+      }
+    },
+
+    "GatewayRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" }
+      }
+    },
+
+    "GatewayRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "Gateway" },
+        "RouteTableId": { "Ref": "GatewayRouteTable" }
+      }
+    },
+
+    "Subnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/21",
+        "VpcId": { "Ref": "VPC" }
+      }
+    },
+
+    "DefaultSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "flynn default group",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "-1"
+          },
+          {
+            "IpProtocol": "icmp",
+            "FromPort": "0",
+            "ToPort": "-1",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "icmp",
+            "FromPort": "3",
+            "ToPort": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+
+    "PublicSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "flynn public router instances",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+
+    "AutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": { "Fn::GetAZs" : { "Ref" : "AWS::Region" } },
+        "HealthCheckType": "EC2",
+        "HealthCheckGracePeriod": 1200,
+        "LaunchConfigurationName": { "Ref": "LaunchConfig" },
+        "DesiredCapacity": { "Ref": "InitialCapacity" },
+        "MinSize": { "Ref": "InitialCapacity" },
+        "MaxSize": { "Ref": "MaximumCapacity" },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "flynn-host",
+            "PropagateAtLaunch": true
+          },
+          {
+            "Key": "Service",
+            "Value": "flynn",
+            "PropagateAtLaunch": true
+          },
+          {
+            "Key": "Role",
+            "Value": "host",
+            "PropagateAtLaunch": true
+          }
+        ]
+      }
+    },
+
+    "LaunchConfig": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "ImageId": { "Ref": "ImageId" },
+        "InstanceType": { "Ref": "InstanceType" },
+        "InstanceMonitoring": false,
+        "BlockDeviceMappings": [
+          { "DeviceName":  "/dev/sdb", "VirtualName":  "ephemeral0" },
+          { "DeviceName":  "/dev/sdc", "VirtualName":  "ephemeral1" },
+          { "DeviceName":  "/dev/sdd", "VirtualName":  "ephemeral2" },
+          { "DeviceName":  "/dev/sde", "VirtualName":  "ephemeral3" }
+        ]
+      }
+    }
+  }
+}
