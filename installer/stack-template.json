@@ -2,17 +2,9 @@
   "AWSTemplateFormatVersion": "2010-09-09",
 
   "Parameters": {
-    "InitialCapacity": {
-      "Type": "Number",
-      "Default": 3,
-      "MinValue": 1,
-      "Description": "Number of instances to start with."
-    },
-    "MaximumCapacity": {
-      "Type": "Number",
-      "Default": 3,
-      "MinValue": 1,
-      "Description": "Maximum number of instances to scale to."
+    "ClusterDomain": {
+      "Type": "String",
+      "Description": "Domain name to use for cluster"
     },
     "ImageId": {
       "Type": "String",
@@ -124,48 +116,68 @@
       }
     },
 
-    "AutoScalingGroup": {
-      "Type": "AWS::AutoScaling::AutoScalingGroup",
+    "Route53HostedZone": {
+      "Type": "AWS::Route53::HostedZone",
       "Properties": {
-        "AvailabilityZones": { "Fn::GetAZs" : { "Ref" : "AWS::Region" } },
-        "HealthCheckType": "EC2",
-        "HealthCheckGracePeriod": 1200,
-        "LaunchConfigurationName": { "Ref": "LaunchConfig" },
-        "DesiredCapacity": { "Ref": "InitialCapacity" },
-        "MinSize": { "Ref": "InitialCapacity" },
-        "MaxSize": { "Ref": "MaximumCapacity" },
-        "Tags": [
-          {
-            "Key": "Name",
-            "Value": "flynn-host",
-            "PropagateAtLaunch": true
-          },
-          {
-            "Key": "Service",
-            "Value": "flynn",
-            "PropagateAtLaunch": true
-          },
-          {
-            "Key": "Role",
-            "Value": "host",
-            "PropagateAtLaunch": true
-          }
-        ]
+        "Name": { "Ref": "ClusterDomain" }
       }
     },
 
-    "LaunchConfig": {
-      "Type": "AWS::AutoScaling::LaunchConfiguration",
+    "Route53RecordSet": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "SetIdentifier": "flynn-record-set",
+        "HostedZoneName": { "Fn::Join": [ "", [ { "Ref": "ClusterDomain" }, "." ]] },
+        "Name": {
+          "Fn::Join" : [ "", [
+            { "Ref" : "EC2Instance" }, ".",
+            { "Ref" : "AWS::Region" }, ".",
+            { "Ref" : "Route53HostedZone" }, "."
+          ] ]
+        },
+        "Type": "A",
+        "ResourceRecords": [
+          { "Ref": "EC2EIP" }
+        ],
+        "TTL": 900
+      }
+    },
+
+    "Route53HealthCheck": {
+      "Type": "AWS::Route53::HealthCheck",
+      "Properties": {
+        "HealthCheckConfig": {
+          "Type": "HTTP",
+          "IPAddress": { "Ref": "EC2EIP" },
+          "ResourcePath": "/ping"
+        }
+      }
+    },
+
+    "EC2EIP": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "InstanceId": { "Ref": "EC2Instance" },
+        "Domain": "vpc"
+      }
+    },
+
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
       "Properties": {
         "ImageId": { "Ref": "ImageId" },
         "InstanceType": { "Ref": "InstanceType" },
-        "InstanceMonitoring": false,
+        "AvailabilityZone": { "Fn::GetAtt": ["Subnet", "AvailabilityZone"] },
         "BlockDeviceMappings": [
-          { "DeviceName":  "/dev/sdb", "VirtualName":  "ephemeral0" },
-          { "DeviceName":  "/dev/sdc", "VirtualName":  "ephemeral1" },
-          { "DeviceName":  "/dev/sdd", "VirtualName":  "ephemeral2" },
-          { "DeviceName":  "/dev/sde", "VirtualName":  "ephemeral3" }
-        ]
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "VolumeSize": 100,
+              "VolumeType": "gp2"
+            }
+          }
+        ],
+        "SubnetId": { "Ref": "Subnet" }
       }
     }
   }

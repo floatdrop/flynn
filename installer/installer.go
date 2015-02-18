@@ -14,6 +14,7 @@ import (
 
 	"github.com/awslabs/aws-sdk-go/aws"
 	"github.com/awslabs/aws-sdk-go/gen/cloudformation"
+	"github.com/flynn/flynn/pkg/random"
 	r "github.com/flynn/flynn/util/release"
 )
 
@@ -24,6 +25,11 @@ func main() {
 
 	if (accessKeyID == "" || secretAccessKey == "") && securityToken == "" {
 		log.Fatal(errors.New("AWS_ACCESS_KEY_ID and AWS_ACCESS_SECRET or AWS_SECURITY_TOKEN must be set"))
+	}
+
+	baseClusterDomain := os.Getenv("BASE_CLUSTER_DOMAIN")
+	if baseClusterDomain == "" {
+		log.Fatal("BASE_CLUSTER_DOMAIN is required")
 	}
 
 	creds := aws.Creds(accessKeyID, secretAccessKey, securityToken)
@@ -58,6 +64,8 @@ func main() {
 		log.Fatal(errors.New(fmt.Sprintf("No image found for region %s", region)))
 	}
 
+	clusterDomain := random.Hex(16) + baseClusterDomain
+
 	res, err := cf.CreateStack(&cloudformation.CreateStackInput{
 		OnFailure:        aws.String("ROLLBACK"),
 		StackName:        aws.String("flynn"),
@@ -68,6 +76,10 @@ func main() {
 			{
 				ParameterKey:   aws.String("ImageId"),
 				ParameterValue: aws.String(imageID),
+			},
+			{
+				ParameterKey:   aws.String("ClusterDomain"),
+				ParameterValue: aws.String(clusterDomain),
 			},
 		},
 	})
